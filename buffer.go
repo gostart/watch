@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/howeyc/fsnotify"
+	"github.com/go-fsnotify/fsnotify"
 )
 
 var WriteFilePerm os.FileMode = 0660
@@ -25,7 +25,7 @@ func NewBuffer(filename string) (*Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = watcher.Watch(filename)
+	err = watcher.Add(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -42,9 +42,9 @@ func NewBuffer(filename string) (*Buffer, error) {
 	go func() {
 		for {
 			select {
-			case event := <-watcher.Event:
-				switch {
-				case event.IsCreate(), event.IsModify():
+			case event := <-watcher.Events:
+				switch event.Op {
+				case fsnotify.Create, fsnotify.Write:
 					buffer.mutex.Lock()
 					err := buffer.readFile()
 					buffer.mutex.Unlock()
@@ -52,13 +52,13 @@ func NewBuffer(filename string) (*Buffer, error) {
 						log.Println("watch.Buffer:", err)
 					}
 
-				case event.IsDelete(), event.IsRename():
+				case fsnotify.Remove, fsnotify.Rename:
 					buffer.mutex.Lock()
 					buffer.buffer.Reset()
 					buffer.mutex.Unlock()
 				}
 
-			case err := <-watcher.Error:
+			case err := <-watcher.Errors:
 				log.Println("watch.Buffer:", err)
 
 			case <-buffer.close:
@@ -92,6 +92,7 @@ func (buffer *Buffer) Bytes() []byte {
 }
 
 func (buffer *Buffer) SetBytes(data []byte) error {
+	// Triggers a file read to buffer.buffer, could be optimized
 	return ioutil.WriteFile(buffer.filename, data, WriteFilePerm)
 }
 
@@ -103,6 +104,7 @@ func (buffer *Buffer) String() string {
 }
 
 func (buffer *Buffer) SetString(str string) error {
+	// Triggers a file read to buffer.buffer, could be optimized
 	return ioutil.WriteFile(buffer.filename, []byte(str), WriteFilePerm)
 }
 
